@@ -1,0 +1,10 @@
+docker-plugin:1.1.9
+git:4.0.0
+php:1.0
+bitbucket:1.1.11
+amazon-ecr:1.6
+docker-build-step:2.4
+terraform:1.0.9
+pipeline-aws:1.39
+pipeline-maven:3.8.2
+workflow-aggregator:2.6

@@ -1,0 +1,292 @@
+version: "3"
+
+services:
+################-PMANAGER-#############
+
+  pmanager_http:
+    build: ./docker/local-prod/pmanager/
+    container_name: pmanager.http
+    ports:
+      - "8080:80"
+    depends_on:
+      - pmanager_slave_db
+      - elasticsearch
+      - kibana
+    volumes:
+      - ../pmanager2/:/var/www/html/
+
+  pmanager_master_db:
+    image: apropos/postgresql:v1
+    container_name: pmanagermaster.db
+    user: root
+    restart: unless-stopped
+    ports:
+      - 5432:5432
+    volumes:
+      - ../pmanager2/pgdata_master:/bitnami/postgres/data
+    env_file:
+      - .env
+    environment:
+      - POSTGRESQL_REPLICATION_MODE=${PMANAGER_MASTER_REPLICATION_MODE}
+      - POSTGRESQL_REPLICATION_USER=${PMANAGER_DB_REPLICATION_USER}
+      - POSTGRESQL_REPLICATION_PASSWORD=${PMANAGER_DB_REPLICATION_PASSWORD}
+      - POSTGRES_DB=${PMANAGER_DATABASE}
+      - POSTGRES_PASSWORD=${PMANAGER_DB_PASSWORD}
+      - POSTGRES_USER=${PMANAGER_DB_USER}
+      - POSTGRESQL_SYNCHRONOUS_COMMIT_MODE=on
+      - POSTGRESQL_NUM_SYNCHRONOUS_REPLICAS=1
+      - POSTGRESQL_INITDB_ARGS=--data-checksums
+      - POSTGRESQL_INITDB_WALDIR=/bitnami/waldir
+
+  pmanager_slave_db:
+    image: apropos/postgresql:v1
+    container_name: pmanagerslave.db
+    user: root
+    restart: unless-stopped
+    volumes:
+      - ../pmanager2/pgdata_slave:/bitnami/postgres/data
+    ports:
+      - 7532:5432
+    depends_on:
+      - pmanager_master_db
+    env_file:
+      - .env
+    environment:
+      - POSTGRESQL_REPLICATION_MODE=${PMANAGER_SLAVE_REPLICATION_MODE}
+      - POSTGRESQL_REPLICATION_USER=${PMANAGER_DB_REPLICATION_USER}
+      - POSTGRESQL_REPLICATION_PASSWORD=${PMANAGER_DB_REPLICATION_PASSWORD}
+      - POSTGRESQL_MASTER_HOST=${PMANAGER_MASTER_HOST}
+      - POSTGRESQL_MASTER_PORT_NUMBER=${PMANAGER_MASTER_PORT}
+
+###############-STAFF-SITE-######################
+
+  staff_http:
+   build: ./docker/local-prod/staff-site/
+   container_name: staff.http
+   ports:
+     - "8050:80"
+   depends_on:
+      - pmanager_http
+   volumes:
+     - ../apropos-staff-site/:/var/www/html/
+
+################-REDIS_&_MAILCATCHER-#############
+
+  redis:
+    image: redis:4.0.6
+    container_name: pmanager.redis
+    ports:
+      - 6379:6379
+
+  mailcatcher:
+    image: schickling/mailcatcher
+    container_name: pmanager.mail
+    restart: unless-stopped
+    ports:
+      - 1080:1080
+
+################-WEBSITE-#############
+
+  website_http:
+    build: ./docker/local-prod/website/
+    container_name: website.http
+    ports:
+      - "8090:80"
+    volumes:
+      - ../apropos-customer-site/:/var/www/html/
+
+################-SSO-#############
+
+  sso_http:
+    build: ./docker/local-prod/sso/
+    container_name: sso.http
+    ports:
+      - "8070:80"
+    depends_on:
+      - mailcatcher
+      - redis
+      - sso_slave_db
+    volumes:
+      - ../apropos-sso-service/:/var/www/html/
+
+  sso_master_db:
+    image: apropos/postgresql:v1
+    container_name: ssomaster.db
+    user: root
+    restart: unless-stopped
+    ports:
+      - 7432:5432
+    volumes:
+      - ../apropos-sso-service/pgdata_master:/bitnami/postgres/data
+    env_file:
+      - .env
+    environment:
+      - POSTGRESQL_REPLICATION_MODE=${SSO_MASTER_REPLICATION_MODE}
+      - POSTGRESQL_REPLICATION_USER=${SSO_DB_REPLICATION_USER}
+      - POSTGRESQL_REPLICATION_PASSWORD=${SSO_DB_REPLICATION_PASSWORD}
+      - POSTGRES_DB=${SSO_DATABASE}
+      - POSTGRES_PASSWORD=${SSO_DB_PASSWORD}
+      - POSTGRES_USER=${SSO_DB_USER}
+      - POSTGRESQL_SYNCHRONOUS_COMMIT_MODE=on
+      - POSTGRESQL_NUM_SYNCHRONOUS_REPLICAS=1
+      - POSTGRESQL_INITDB_ARGS=--data-checksums
+      - POSTGRESQL_INITDB_WALDIR=/bitnami/waldir
+
+  sso_slave_db:
+    image: apropos/postgresql:v1
+    container_name: ssoslave.db
+    user: root
+    restart: unless-stopped
+    volumes:
+      - ../apropos-sso-service/pgdata_slave:/bitnami/postgres/data
+    ports:
+      - 7535:5432
+    depends_on:
+      - sso_master_db
+    env_file:
+      - .env
+    environment:
+      - POSTGRESQL_REPLICATION_MODE=${SSO_SLAVE_REPLICATION_MODE}
+      - POSTGRESQL_REPLICATION_USER=${SSO_DB_REPLICATION_USER}
+      - POSTGRESQL_REPLICATION_PASSWORD=${SSO_DB_REPLICATION_PASSWORD}
+      - POSTGRESQL_MASTER_HOST=${SSO_MASTER_HOST}
+      - POSTGRESQL_MASTER_PORT_NUMBER=${SSO_MASTER_PORT}
+
+################-WORKLOG-#############
+
+  worklog_service_http:
+    build: ./docker/local-prod/worklog/
+    container_name: worklog.http
+    ports:
+      - 8888:80
+    volumes:
+      - ../apropos-worklog-service/:/var/www/html/
+    depends_on:
+      - worklog_slave_db
+
+  worklog_master_db:
+    image: apropos/postgresql:v1
+    container_name: worklogmaster.db
+    user: root
+    restart: unless-stopped
+    ports:
+      - 5454:5432
+    volumes:
+      - ../apropos-worklog-service/pgdata_master:/bitnami/
+    env_file:
+      - .env
+    environment:
+      - POSTGRESQL_REPLICATION_MODE=${WORKLOG_MASTER_REPLICATION_MODE}
+      - POSTGRESQL_REPLICATION_USER=${WORKLOG_DB_REPLICATION_USER}
+      - POSTGRESQL_REPLICATION_PASSWORD=${WORKLOG_DB_REPLICATION_PASSWORD}
+      - POSTGRES_DB=${WORKLOG_DATABASE}
+      - POSTGRES_PASSWORD=${WORKLOG_DB_PASSWORD}
+      - POSTGRES_USER=${WORKLOG_DB_USER}
+      - POSTGRESQL_SYNCHRONOUS_COMMIT_MODE=on
+      - POSTGRESQL_NUM_SYNCHRONOUS_REPLICAS=1
+      - POSTGRESQL_INITDB_ARGS=--data-checksums
+      - POSTGRESQL_INITDB_WALDIR=/bitnami/waldir
+
+  worklog_slave_db:
+    image: apropos/postgresql:v1
+    container_name: worklogslave.db
+    user: root
+    restart: unless-stopped
+    volumes:
+      - ../apropos-worklog-service/pgdata_slave:/bitnami/
+    ports:
+      - 7575:5432
+    depends_on:
+      - worklog_master_db
+    env_file:
+      - .env
+    environment:
+      - POSTGRESQL_REPLICATION_MODE=${WORKLOG_SLAVE_REPLICATION_MODE}
+      - POSTGRESQL_REPLICATION_USER=${WORKLOG_DB_REPLICATION_USER}
+      - POSTGRESQL_REPLICATION_PASSWORD=${WORKLOG_DB_REPLICATION_PASSWORD}
+      - POSTGRESQL_MASTER_HOST=${WORKLOG_MASTER_HOST}
+      - POSTGRESQL_MASTER_PORT_NUMBER=${WORKLOG_MASTER_PORT}
+
+################-POSTCODE-SERVICE-#############
+
+  postcode_http:
+    container_name: postcode.http
+    build: ./docker/local-prod/postcode/
+    volumes:
+      - ../apropos-postcode-service/:/var/www/html/
+    ports:
+      - 8889:80
+    depends_on:
+      - postcode_db
+
+  postcode_db:
+    image: mysql:5.7
+    container_name: postcode.db
+    user: root
+    restart: unless-stopped
+    ports:
+      - 3308:3306
+    volumes:
+      - ../apropos-postcode-service/mysql:/var/lib/mysql
+    env_file:
+      - .env
+    environment:
+      - MYSQL_DATABASE=${POSTCODE_DATABASE}
+      - MYSQL_ROOT_PASSWORD=${POSTCODE_ROOT_PASSWORD}
+      - MYSQL_USER=${POSTCODE_USER}
+      - MYSQL_PASSWORD=${POSTCODE_PASSWORD}
+
+################-ELASTICSEARCH_&_KIBANA-#############
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:6.3.1
+    container_name: elasticsearch
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - discovery.type=single-node
+    volumes:
+      - ../pmanager2/elasticsearch:/var/lib/elasticsearch/data
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:6.3.1
+    container_name: kibana
+    ports:
+      - 5601:5601
+    environment:
+      - "ELASTICSEARCH_URL=http://elasticsearch:9200"
+
+################-PORTAL-SERVICE-#############
+
+  portal_http:
+    build: ./docker/local-prod/portal/
+    container_name: portal.http
+    ports:
+      - "9010:80"
+    depends_on:
+      - pmanager_http
+    volumes:
+      - ../apropos-portal-service/:/var/www/html/
+
+###################-Apropos Sun systems integration-###################
+  sun_service_http:
+    container_name: sunservice.http
+    build: ./docker/local-prod/sunservice/
+    volumes:
+      - ../apropos-sun-service/:/app/
+    ports:
+      - 9080:8080
+      - 5005:5005
+
+################-Queue-Worker-#############
+
+  queueworker_http:
+    build: ./docker/local-prod/queueworker/
+    container_name: queueworker.http
+    ports:
+      - "9020:80"
+    volumes:
+      - ../apropos-queues-worker/:/var/www/html/
